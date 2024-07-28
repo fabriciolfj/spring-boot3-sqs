@@ -45,6 +45,11 @@ public class UserEventListeners {
         userRepository.save(new User(payload.id(), payload.username(), payload.email()));
     }
 
+    @SqsListener("${events.queues.shipping.custom-object-mapper-queue}")
+    public void receiveShipmentRequestWithCustomObjectMapper(ShipmentRequestedEvent shipmentRequestedEvent) {
+        logger.info("receive shipment request with custom object mapper: {}", shipmentRequestedEvent);
+    }
+
 
 }
 

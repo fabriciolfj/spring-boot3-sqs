@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,6 +28,38 @@ public class SpringCloudAwsSQSLiveTest extends BaseSqsIntegrationTest {
 
     @Autowired
     private EventQueuesProperties eventQueuesProperties;
+
+    @Autowired
+    private SqsAsyncClient sqsAsyncClient;
+
+    @Autowired
+    private ShipmentEventsQueuesProperties shipmentEventsQueuesProperties;
+
+    @Test
+    void givenShipmentRequestWithCustomDateFormat_whenMessageReceived_thenDeserializesDateCorrectly() {
+        UUID orderId = UUID.randomUUID();
+        String shipBy = LocalDate.parse("2024-05-12")
+                .format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+
+        var jsonMessage = """
+            {
+                "orderId": "%s",
+                "customerAddress": "123 Main St",
+                "shipBy": "%s"
+            }
+            """.formatted(orderId, shipBy);
+
+        sendRawMessage(shipmentEventsQueuesProperties.getCustomObjectMapperQueue(), jsonMessage);
+    }
+
+    private void sendRawMessage(String queueName, String jsonMessage) {
+        sqsAsyncClient.getQueueUrl(req -> req.queueName(queueName))
+                .thenCompose(resp -> sqsAsyncClient.sendMessage(req -> req.messageBody(jsonMessage)
+                        .queueUrl(resp.queueUrl())))
+                .join();
+    }
+
+
 
     @Test
     void givenAStringPayload_whenSend_shouldReceive() {
