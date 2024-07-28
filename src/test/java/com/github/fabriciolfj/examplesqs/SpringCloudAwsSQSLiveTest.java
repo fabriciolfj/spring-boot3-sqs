@@ -1,5 +1,6 @@
 package com.github.fabriciolfj.examplesqs;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.awspring.cloud.sqs.operations.SqsTemplate;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -14,6 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static com.github.fabriciolfj.examplesqs.UserEventListeners.EVENT_TYPE_CUSTOM_HEADER;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.awaitility.Awaitility.await;
 
 public class SpringCloudAwsSQSLiveTest extends BaseSqsIntegrationTest {
@@ -34,6 +36,12 @@ public class SpringCloudAwsSQSLiveTest extends BaseSqsIntegrationTest {
 
     @Autowired
     private ShipmentEventsQueuesProperties shipmentEventsQueuesProperties;
+
+    @Autowired
+    private ShippingHeaderTypesProperties headerTypesProperties;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void givenShipmentRequestWithCustomDateFormat_whenMessageReceived_thenDeserializesDateCorrectly() {
@@ -109,6 +117,36 @@ public class SpringCloudAwsSQSLiveTest extends BaseSqsIntegrationTest {
         await().atMost(Duration.ofSeconds(3))
                 .until(() -> userRepository.findById(userId)
                         .isPresent());
+    }
+
+
+    @Test
+    void givenPayloadWithSubclasses_whenMessageReceived_thenDeserializesCorrectType() {
+        var domesticOrderId = UUID.randomUUID();
+        String deliveryRouteCode = "XPTO1234";
+        var domesticEvent = new DomesticShipmentRequestedEvent(domesticOrderId, "123 Main St", LocalDate.parse("2024-05-12"), deliveryRouteCode);
+
+        var internationalOrderId = UUID.randomUUID();
+        String destinationCountry = "Canada";
+        String customsInfo = "HS Code: 8471.30, Origin: China, Value: $500";
+        InternationalShipmentRequestedEvent internationalEvent = new InternationalShipmentRequestedEvent(internationalOrderId, "123 Main St", LocalDate.parse("2024-05-24"),
+                destinationCountry, customsInfo);
+
+        var customTemplate = SqsTemplate.builder()
+                .sqsAsyncClient(sqsAsyncClient)
+                .configureDefaultConverter(converter -> {
+                    converter.doNotSendPayloadTypeHeader();
+                    converter.setObjectMapper(objectMapper);
+                })
+                .build();
+
+        customTemplate.send(to -> to.queue(shipmentEventsQueuesProperties.getSubclassDeserializationQueue())
+                .payload(internationalEvent)
+                .header(headerTypesProperties.getHeaderName(), headerTypesProperties.getInternational()));
+
+        customTemplate.send(to -> to.queue(shipmentEventsQueuesProperties.getSubclassDeserializationQueue())
+                .payload(domesticEvent)
+                .header(headerTypesProperties.getHeaderName(), headerTypesProperties.getDomestic()));
     }
 
 }
